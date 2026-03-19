@@ -1,10 +1,12 @@
 from datetime import datetime
 
+from fastapi.exceptions import HTTPException
+
 from config import host,user,password, db_name
 
 from fastapi import FastAPI
 import uvicorn
-from pydantic import BaseModel
+from pydantic import BaseModel,ValidationError
 import psycopg2 as psy
 from psycopg2 import sql
 
@@ -71,7 +73,10 @@ dict_table_names = {'Machines':Machine,
 @app.get('/{name_table}',summary="получить данные таблицы полность",tags=["Основные методы CRUD"])
 def get_all_item(name_table: str):
     if name_table not in dict_table_names.keys():
-        return f"Такой таблицы нет,проверьте из списка ",dict_table_names.keys()
+        raise HTTPException(
+            status_code=404,
+            detail=f"Таблицы '{name_table}' нет. Доступны: {dict_table_names.keys()}"
+        )
     connection = psy.connect(
         host=host,
         user=user,
@@ -95,7 +100,10 @@ def get_all_item(name_table: str):
 @app.get('/{name_table}/{id}',summary="получить строку",tags=["Основные методы CRUD"])
 def get_one_item(name_table: str,id: int):
     if name_table not in dict_table_names.keys():
-        return f"Такой таблицы нет,проверьте из списка ", dict_table_names.keys()
+        raise HTTPException(
+            status_code=404,
+            detail=f"Таблицы '{name_table}' нет. Доступны: {dict_table_names.keys()}"
+        )
 
     connection = psy.connect(
         host=host,
@@ -118,10 +126,21 @@ def get_one_item(name_table: str,id: int):
         connection.close()
 # ----------------POST методы------------------
 @app.post("/{name_table}",summary="создать строку",tags=["Основные методы CRUD"])
-def create_row(data:dict,name_table: str):
-    if name_table not in dict_table_names.keys():
-        return f"Такой таблицы нет,проверьте из списка ", dict_table_names.keys()
+def create_row(data:dict ,name_table: str):
 
+    if name_table not in dict_table_names.keys():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Таблицы '{name_table}' нет. Доступны: {dict_table_names.keys()}"
+        )
+    try:
+
+        print(data)
+        model = dict_table_names[name_table]
+        valid_data = model.model_validate(data)
+        print(valid_data)
+    except ValidationError as e:
+         raise HTTPException(status_code=422, detail=e.errors())
     connection = psy.connect(
         host=host,
         user=user,
@@ -129,24 +148,25 @@ def create_row(data:dict,name_table: str):
         database=db_name
     )
     try:
+       fields = tuple(data.keys())
+       values = tuple(data.values())
+       print(values)
 
 
-        model = dict_table_names[name_table]
-        valid_data = model.model_validate(data)
-        return model,valid_data
+       query = sql.SQL("INSERT INTO {} ({}) VALUES ({}) RETURNING *;").format(
+           sql.Identifier(name_table),
+                                      sql.SQL(', ').join(map(sql.Identifier,fields)),
+                                        sql.SQL(', ').join([sql.Placeholder()] * len(data))
+                                      )
+       with connection.cursor() as cursor:
+           cursor.execute(query,values )
+           inserted = cursor.fetchone()  # получаем вставленную строку
+           connection.commit()
+       print(inserted)
+       return "ALL DONE"
     finally:
         connection.close()
-    # with connection.cursor() as cursor:
-    #     query = sql.SQL(
-    #         '''
-    #        INSERT INTO {} ({}) VALUES ({}) RETURNING *;
-    #         '''
-    #     ).format(sql.Identifier(name_table)),
-    #     sql.SQL(', ').join(columns_sql),
-    #     placeholders
-    #     )
-    #     cursor.execute(query,(id,))
-    return {'status':True,'name':name_table}
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app",reload=True)
