@@ -18,12 +18,7 @@ READ_OPTIONS_CSV = dict(
     infer_schema_length = 0
 )
 
-EXCEL_READ_OPTIONS = dict(
-    read_options={
-        "null_values": ["", "NULL", "null", "None", "N/A", "-", "nan"],
-        "infer_schema_length": 0,
-    },
-)
+
 
 
 def _check_columns(df: pl.DataFrame, required: set) -> None:
@@ -64,7 +59,7 @@ def extract_excel(
     path = Path(path)
     check_valid_file(path,access_format_excel)
 
-    df = pl.read_excel( path, **EXCEL_READ_OPTIONS )
+    df = pl.read_excel( path )
 
     if columns:
         # оставляем только запрошенные (после чтения; excel читается целиком)

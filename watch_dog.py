@@ -43,21 +43,45 @@ class NewFileHandler(PatternMatchingEventHandler):
             ignore_directories=True,
             case_sensitive=False,
         )
+        # Файлы, которые прямо сейчас обрабатываются — чтобы не запускать
+        # параллельно один и тот же файл, если событий прилетит много.
+        self._in_progress: set[str] = set()
 
-    def on_created(self, event):
-        path = Path(event.src_path)
-        log.info("Обнаружен новый файл: %s", path.name)
+    # ---------- общая логика для on_created и on_modified ----------
 
-        if not wait_until_stable(path):
-            log.warning("Файл %s не стабилизировался, пропуск", path.name)
+    def _process(self, path: Path, source: str) -> None:
+        """Общая точка: дождаться стабилизации и запустить ETL."""
+        key = str(path.resolve())
+
+        # Уже обрабатываем этот же файл — пропускаем дубликат события
+        if key in self._in_progress:
+            log.debug("[%s] %s уже в обработке, пропуск", source, path.name)
             return
 
-        try:
-            run(str(path), entity="UP")
-            log.info("Файл %s успешно обработан", path.name)
-        except Exception:
-            log.exception("Ошибка обработки файла %s", path.name)
+        log.info("[%s] Обнаружен файл: %s", source, path.name)
 
+        self._in_progress.add(key)
+        try:
+            if not wait_until_stable(path):
+                log.warning("[%s] Файл %s не стабилизировался, пропуск",
+                            source, path.name)
+                return
+
+            try:
+                run(str(path), entity="UP")
+                log.info("[%s] Файл %s успешно обработан", source, path.name)
+            except Exception:
+                log.exception("[%s] Ошибка обработки файла %s", source, path.name)
+        finally:
+            self._in_progress.discard(key)
+
+    # ---------- обработчики событий ----------
+
+    def on_created(self, event):
+        self._process(Path(event.src_path), source="created")
+
+    def on_modified(self, event):
+        self._process(Path(event.src_path), source="modified")
 
 def main() -> None:
     watch_dir = Path(WATCH_DIR)
