@@ -11,3 +11,6 @@ LOGS_DIR = BASE_DIR / "logs"
 REPORTS_DIR = BASE_DIR / "reports"
 LOGS_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
+WATCH_DIR = Path("./incoming")
+FILE_EXTENSIONS = [".csv", ".xlsx", ".xls", ".tsv", ".txt"]
+
